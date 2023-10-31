@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import requests
 import json
 from fastapi.middleware.cors import CORSMiddleware
+import mysql.connector
 
 app = FastAPI()
 
@@ -20,15 +21,18 @@ app.add_middleware(
     allow_headers=["*"],  # 모든 HTTP 헤더 허용
 )
 
+# MySQL 연결 설정
+db_config = {
+    "host": "localhost",
+    "user": "root",
+    "password": "1q2w3e4r",
+    "database": "spring_social"
+}
 
 # REST API 호출에 필요한 라이브러리
-
-# [내 애플리케이션] > [앱 키] 에서 확인한 REST API 키 값 입력
 REST_API_KEY = '3bb30f6d9eab61add4b056721668725f'
 
-# KoGPT API 호출을 위한 메서드 선언
-# 각 파라미터 기본값으로 설정
-def kogpt_api(prompt, max_tokens, temperature, top_p, n=1):
+def kogpt_api(prompt, max_tokens, temperature, top_p, n):
     r = requests.post(
         'https://api.kakaobrain.com/v1/inference/kogpt/generation',
         json={
@@ -52,7 +56,7 @@ class PromptRequest(BaseModel):
     prompt: str
 
 # POST 요청을 처리하는 핸들러 함수
-@app.post("/api//post")
+@app.post("/api/post")
 def generate_text(request: PromptRequest):
     # 전달된 문자열을 prompt로 사용하여 kogpt_api() 메서드 호출
     response = kogpt_api(
@@ -62,4 +66,24 @@ def generate_text(request: PromptRequest):
         top_p=0.1,
         n=1
     )
-    return response
+    
+    # MySQL 데이터베이스에 응답을 저장
+    try:
+        connection = mysql.connector.connect(**db_config)
+        cursor = connection.cursor()
+
+        # 응답을 MySQL 테이블에 저장
+        sql = "UPDATE post SET summary = %s WHERE contents = %s)"
+        val = (json.dumps(response), request.prompt)
+        cursor.execute(sql, val)
+
+        connection.commit()
+        return response
+    except Exception as error:
+        return {"error": str(error)}
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+            print("MySQL connection is closed")
+    
