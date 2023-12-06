@@ -117,29 +117,33 @@ def play_voice(post_id: int):
             print("MySQL connection is closed")
 
 
-@app.post("/api/tts/clone")
-async def voiceClone(file: UploadFile = File(...), userId: int = Form(...)):
+@app.post("/api/uploadvoicefile")
+async def voiceClone(uploadVoiceFile: UploadFile = File(...), userId: int = Form(...)):
     try:
         # 저장할 경로 및 파일 이름 설정
         file_path = f"./source/source{userId}.mp3"
 
         # 받아온 mp3 파일을 저장
         with open(file_path, "wb") as file_local:
-            file_local.write(file.file.read())
+            file_local.write(uploadVoiceFile.file.read())
 
         # voice_config 테이블 업데이트
         try:
             connection = mysql.connector.connect(**db_config)
             cursor = connection.cursor()
 
-            # voice_config 테이블 업데이트
-            sql_update = "UPDATE voice_config SET actor = %s WHERE user_id = %s"
+            # Try to update the existing row, and if it doesn't exist, insert a new row
+            sql_update_insert = """
+                INSERT INTO voice_config (user_id, actor)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE actor = VALUES(actor)
+            """
             actor_name = f"Custom{userId}"
-            cursor.execute(sql_update, (actor_name, userId))
+            cursor.execute(sql_update_insert, (userId, actor_name))
 
             connection.commit()
         except Exception as error:
-            print(f"An error occurred while updating voice_config: {str(error)}")
+            print(f"An error occurred while updating/inserting into voice_config: {str(error)}")
         finally:
             if connection.is_connected():
                 cursor.close()
