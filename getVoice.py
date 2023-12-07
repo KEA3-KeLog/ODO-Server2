@@ -9,6 +9,7 @@ import random
 from typing import Dict
 from fastapi.responses import FileResponse
 import os
+import re
 
 app = FastAPI()
 
@@ -26,13 +27,22 @@ set_api_key(TTS_key)
 
 def get_actor_by_user_id(user_id, cursor):
     # MySQL에서 user_id에 해당하는 튜플의 actor를 검색합니다.
-    sql_select = "SELECT actor FROM voice_config WHERE user_id = %s"
+    sql_select = "SELECT actor FROM oauth_member WHERE id = %s"
     cursor.execute(sql_select, (user_id,))
     result = cursor.fetchone()
     if result and result[0] is not None:
         return result[0]
     else:
         return "Grace"
+
+def remove_image_links(contents):
+    # 정규 표현식을 사용하여 ![...](...) 패턴을 찾습니다.
+    pattern = re.compile(r"!\[[^\]]*\]\([^\)]*\)")
+    
+    # 찾은 패턴을 비워진 문자열로 대체합니다.
+    cleaned_contents = re.sub(pattern, "", contents)
+    
+    return cleaned_contents
 
 
 # actor 목록 : "Dorothy" "Grace" "Matilda"   "Michael"   "James" "🎅 Santa Claus"
@@ -41,7 +51,7 @@ def elevenLabs(contents, model, cursor, userId):
     user_id_actor = get_actor_by_user_id(userId, cursor)
 
     # 가져온 actor 값을 이용하여 elevenLabs를 호출합니다.
-    audio = generate(text=contents, voice=user_id_actor, model=model)
+    audio = generate(text=remove_image_links(contents), voice=user_id_actor, model=model)
 
     file_path = f"{int(datetime.now().timestamp())}{random.randint(1000, 9999)}.mp3"
     with open(file_path, "wb") as file:
@@ -97,7 +107,6 @@ def play_voice(post_id: int):
 
         if result:
             voice_file_path = result[0]
-
             if os.path.exists(voice_file_path):
                 # 파일이 존재하면 클라이언트에게 파일을 전송합니다.
                 return FileResponse(voice_file_path, media_type="audio/mp3")
@@ -127,23 +136,19 @@ async def voiceClone(uploadVoiceFile: UploadFile = File(...), userId: int = Form
         with open(file_path, "wb") as file_local:
             file_local.write(uploadVoiceFile.file.read())
 
-        # voice_config 테이블 업데이트
+        # ouath_member 테이블 업데이트
         try:
             connection = mysql.connector.connect(**db_config)
             cursor = connection.cursor()
 
             # Try to update the existing row, and if it doesn't exist, insert a new row
-            sql_update_insert = """
-                INSERT INTO voice_config (user_id, actor)
-                VALUES (%s, %s)
-                ON DUPLICATE KEY UPDATE actor = VALUES(actor)
-            """
+            sql_update = "UPDATE oauth_member SET actor = %s WHERE id = %s"
             actor_name = f"Custom{userId}"
-            cursor.execute(sql_update_insert, (userId, actor_name))
+            cursor.execute(sql_update, (actor_name, userId))
 
             connection.commit()
         except Exception as error:
-            print(f"An error occurred while updating/inserting into voice_config: {str(error)}")
+            print(f"An error occurred while updating/inserting into oauth_member: {str(error)}")
         finally:
             if connection.is_connected():
                 cursor.close()
