@@ -65,7 +65,7 @@ class TTSRequest(BaseModel):
 
 
 @app.post("/api/tts")
-async def generate_text(contents: TTSRequest):
+async def generate_tts(contents: TTSRequest):
     try:
         connection = mysql.connector.connect(**db_config)
         cursor = connection.cursor()
